@@ -1,0 +1,334 @@
+---
+title: "Final Report - Stat 184"
+author: "Ram Bharadwaj Gandikota"
+date: "April 22nd 2024"
+output: html_notebook
+---
+## Introduction
+
+Using historical and current price data of Apple and Microsoft stock, we want to understand which of the two performs better? That is we want to look beyond the basic price increase and decrease and really understand how it performs historically and currently (2023-2024). By trying to answer this question via Stat 184 analysis and R coding concepts, we will determine a winner of the two stocks. 
+
+Data Details:
+Primary data source is stock market data of Apple, Microsoft, Tesla and Amazon for the year 2023 to 2024 was found on data.world link: https://data.world/shamiya-lin/appl-msft-tsla-amzn-23-24-stock
+
+Secondary data source (1) is stock market data of Apple from year 1980 to 2020 was found on Kaggle.com link: https://www.kaggle.com/datasets/aayushmishra1512/apple-complete-stock-data19802020?resource=download
+
+Secondary data source (2) is stock market data of Microsoft from year 2001 to 2021 was found on Kaggle.com link:https://www.kaggle.com/datasets/rawaneid/microsoft-stock-market-2001-2021
+
+
+### Set up
+
+We start by loading necessary libraries and reading in the csv files into primary, secondary1 and secondary2 variables which we will make use of to do our analysis and answer the research question. The primary notebook is the stock market data that contains price information of stocks TSLA, APPL, MSFT, AMZN for the year 2023-2024, we will only be make use of the cases where the symbol is either MSFT or AAPL. The secondary1 data set contains historic stock market data of Apple's stock from 1980 to 2020. The secondary2 data set contains historic stock market data of Microsoft's stock from 2001 to 2021. From this point on the companies and their data will be referred to as primary, secondary1 and secondary2. Any transformed data will contain this with a relevant rename of what we've done to the data.
+```{r}
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+
+#please change directory for the data files to load
+setwd("/Users/rambharadwaj/Downloads/CSV file")
+primary <- read.csv("stock_data.csv")
+secondary1 <- read.csv("AAPL.csv")
+secondary2 <- read.csv("MSFT.csv")
+```
+
+### Initial Observations of Data
+We begin by inspecting the head of all the datasets, then collect some information regarding dimensions, column names, data types. Based on that here are the observations:
+1.Primary: The primary data columns names and data types are: Date (chr), Open (num), High (num), Low (num), CLose (num), Adj.Close (num), Volume (int) and Symbol (chr). The primary data set contains 1004 rows and 8 columns. 
+2.Secondary 1:The secondary1 data columns names and data types are: Date (chr), Open() (chr), High (chr), Low (chr), CLose (chr), Adj.Close (chr) and Volume (chr). The secondary1 data set contains 10016 rows and 7 columns.
+3.Secondary 2:The secondary2 data columns names and data types are: X (chr), open(chr), high (chr), low (chr), cose (chr), and volume (chr). The secondary2 data set contains 5000 rows and 6 columns.
+
+The columns we want to be numeric are in character form in secondary1 and secondary2, so they should be converted to numeric form. After this a check for na values is made, where in secondary1 there was an issue which has been addressed later in this analysis project. Some general observations on the data: 
+
+1. Primary data set's closing data shows the close price has an median value of 189.96 (note: this is the median of all 4 stocks) and max value of 409.72 (note: this is the max for of 4 stocks).
+2. Secondary1 data set's closing data shows the close price has a median value of 0.437 and a max value of 134.17
+3. Secondary2 data set's closing data shows the close price has a median value of 29.92 and a max value of 238.93
+
+This gives us a general idea of what each stock's price is like. But the secondary data sets have different timelines, Apple's stock is 40 years of historic data, and Microsoft's is only 20 years of data, which could explain why the median value of apple stock is so low. But we will fix this range issue later on in the project analysis. We also ensure both data sets cover the same timeline in the data wrangling section. 
+
+```{r}
+head(primary)
+head(secondary1,10)
+head(secondary2,10)
+
+names_primary <- colnames(primary)
+rcount_primary <- nrow(primary)
+ccount_primary <- ncol(primary)
+
+names_secondary1 <- colnames(secondary1)
+
+rcount_secondary1 <- nrow(secondary1)
+ccount_secondary1 <- ncol(secondary1)
+
+names_secondary2 <- colnames(secondary2)
+rcount_secondary2 <- nrow(secondary2)
+ccount_secondary2 <- ncol(secondary2)
+
+(names_primary)
+rcount_primary
+ccount_primary
+
+names_secondary1
+rcount_secondary1
+ccount_secondary1
+
+names_secondary2
+rcount_secondary2
+ccount_secondary2
+
+summary(primary)
+str(primary)
+summary(secondary1)
+str(secondary1)
+
+secondary1$Open <- as.numeric(secondary1$Open)
+secondary1$High <- as.numeric(secondary1$High)
+secondary1$Low <- as.numeric(secondary1$Low)
+secondary1$Close <- as.numeric(secondary1$Close)
+secondary1$Adj.Close <- as.numeric(secondary1$Adj.Close)
+secondary1$Volume <- as.numeric(secondary1$Volume)
+
+sum(is.na(secondary1$Date))
+sum(is.na(secondary1$Close))
+sum(is.na(secondary1$Volume))
+str(secondary1)
+
+str(secondary2)
+sum(is.na(secondary2))
+sum(is.na(primary))
+
+```
+
+### Transform, Create, Update Data sets to analyze
+Based on the previous section, there are couple things to handle:
+
+1. Primary: For primary we see that there are Amazon and Tesla's stock market data in the data set as well, we don't need this, so we will filter these out using regex and data wrangling techniques. To confirm that we no longer have the non-relevant data, we again use regex and summarize to ensure we only have Apple and Microsoft's data in primary.
+2. Secondary1: We observed there were NA values in secondary1, so we drop these values, and pick only relevant columns Date, Open, High, Close and Volume to aid in our analysis. We also add a Symbol to the secondary1 data set as we will use this to differ the cases when we combine secondary1 and secondary2 later on.
+3. Secondary2: There were no NA values in this data set so we do not drop anything, however the names of these columns are not in the same style and especially the date column which simply uses X, so we again pick only relevant columns for analysis and rename the names to match with secondary1 and primary data set's column names. 
+
+We then visually inspect the head and tail to see what secondary1 and secondary2 data set looks like. After this, we create a combined data set called Historic_0120 which combines the two secondary data sets in order to make some summary observations about them. Before we do that we check to make sure the row count of the combined data set matches up with the row count of secondary1 plus row count of secondary2. Once that was done we ensured that the range of the two data sets matches up, and to do this we identified both data sets have data from 2001-03-16 to 2020-09-01, so we only make use of that data and drop all the other dates and their data. 
+
+```{r}
+primary <- primary %>% filter(!grepl("AMZN|TSLA", Symbol))
+
+check_removed_count <- primary %>% filter(grepl("AMZN|TSLA", Symbol)) %>% summarize(count = n())
+check_removed_count
+
+secondary1 <- secondary1 %>% drop_na() %>% select(Date ,Open, High, Close, Volume)%>% mutate(Symbol = "AAPL") 
+head(secondary1, 10)
+tail(secondary1)
+sum(is.na(secondary1))
+
+head(secondary2)
+secondary2 <- secondary2 %>% select(X,open, high, close, volume) %>% 
+  rename(Date = X, Open = open, Close = close, High = high, Volume = volume, ) %>% mutate(Symbol = "MSFT") 
+head(secondary2, 10)
+tail(secondary2)
+names(secondary2)
+
+Historic_0120 <- bind_rows(secondary1, secondary2) 
+
+head(Historic_0120)
+tail(Historic_0120)
+
+nrow(secondary1) + nrow(secondary2)
+nrow(Historic_0120)
+
+Historic_0120 <- Historic_0120 %>% filter(Date >= as.Date("2001-03-16") & Date <= as.Date("2020-09-01")) %>% arrange(ymd(Date))
+
+nrow(Historic_0120)
+head(Historic_0120,20)
+
+```
+
+### Additional Observations on new dataset
+
+After the creation of Historic_0120 and visual inspection of the data set as well, the summary operations are performed and the summary statistics are as follows (again we will focus on close price but with new timeline and we will also look at volume as this explains how much money has been moved in these stocks):
+1. Apple: Apple has a mean close price 9.018, and a max close price of 134.18. The volume mean for Apple is 34,131,8766.
+2. Microsoft: Microsoft has a mean close price of 50.926 and max close price of 238.93. The volume mean for Microsoft is 52,589,098
+3. Both Together : Combined they have a mean close price of of 22.97 and max close price of 238.93
+
+Based on these summary statistics, we identify that Microsoft's stock has much money coming in and out, roughly 20,000,000 more volume than Apple. This means that more people (or higher amount of stock count) have been bought and sold of Microsoft stock compared to Apple, this might be the reason why the close, mean and max prices of Apple are much lower than Microsoft. But we can dig deeper and understand more about these two stocks. 
+
+```{r}
+mean_closing_price <- Historic_0120 %>% summarise(mean(Close))
+max_closing_price_AAPL <- Historic_0120 %>% filter(grepl("AAPL", Symbol)) %>% summarise(max(Close))
+max_closing_price_MSFT <- Historic_0120 %>% filter(grepl("MSFT", Symbol)) %>% summarise(max(Close))
+mean_closing_price_AAPL <- Historic_0120 %>% filter(grepl("AAPL", Symbol)) %>% summarise(mean(Close))
+mean_closing_price_MSFT <- Historic_0120 %>% filter(grepl("MSFT", Symbol)) %>% summarise(mean(Close))
+max_price <- max(max_closing_price_AAPL, max_closing_price_MSFT)
+
+mean_closing_price
+mean_closing_price_AAPL
+mean_closing_price_MSFT
+max_closing_price_AAPL
+max_closing_price_MSFT
+max_price
+
+mean_volume_MSFT <- Historic_0120 %>% filter(grepl("MSFT", Symbol)) %>% summarise(mean(Volume))
+mean_volume_AAPL <- Historic_0120 %>% filter(grepl("AAPL", Symbol)) %>% summarise(mean(Volume))
+
+mean_volume_MSFT
+mean_volume_AAPL
+```
+
+### Preparing Secondary Datasets for plots
+
+Due to the amount of cases, we might benefit from focusing on 30-day averages (a common time frame to analyze stocks) rather than 1-day prices. To do this, we create a new 30 day average data sets from our secondary1 and secondary2 data. A function that first changes the date range to match up and then a function to create a 30-day average data set are used and we have our new data sets that will be used from this point on. We also ensure that the Date format is in the proper format using lubricate's ymd format, which helps us filter out the proper date range for analysis.
+
+The new_secondary1 data sets now only has 332 cases same as new_secondary2. We inspect the data sets visually to ensure everything look alright. After this, we also create pivoted data sets called pivoted_monthly_secondary1 and pivoted_monthly_secondary2, as we need the monthly averages in long format to plot close, high and open monthly averages by date to understand how these three pricing data points move over time in both stocks.
+
+```{r}
+secondary1$Date <- ymd(secondary1$Date)
+str(secondary1)
+secondary2$Date <- ymd(secondary2$Date)
+str(secondary2)
+
+userDefinedFunction_changeDateRange <- function(data)
+{
+  data %>% filter(Date >= "2001-03-16" & Date <= "2020-09-01") %>% arrange(Date)
+}
+
+secondary1 <- userDefinedFunction_changeDateRange(secondary1)
+secondary2 <- userDefinedFunction_changeDateRange(secondary2)
+head(secondary1)
+tail(secondary1)
+
+head(secondary2)
+tail(secondary2)
+
+userDefinedFunction_calc30DayAvg <- function(data)
+{
+  data %>% mutate(monthly = floor_date(Date, "30 days")) %>% group_by(monthly) %>% summarise(monthly_open = mean(Open), monthly_high = mean(High), monthly_close = mean(Close), monthly_volume = mean(Volume)) 
+}
+
+new_secondary1 <- userDefinedFunction_calc30DayAvg(secondary1)
+new_secondary2 <- userDefinedFunction_calc30DayAvg(secondary2)
+
+head(new_secondary1)
+str(new_secondary1)
+head(new_secondary2)
+str(new_secondary2)
+
+nrow(new_secondary1)
+nrow(new_secondary2)
+
+pivoted_monthly_secondary1 <- new_secondary1 %>% pivot_longer(cols = c("monthly_open","monthly_high", "monthly_close"), names_to = "monthly_type", values_to = "average_vals")
+head(pivoted_monthly_secondary1,20)
+str(pivoted_monthly_secondary1)
+
+pivoted_monthly_secondary2 <- new_secondary2 %>% pivot_longer(cols = c("monthly_open","monthly_high", "monthly_close"), names_to = "monthly_type", values_to = "average_vals")
+head(pivoted_monthly_secondary2,20)
+str(pivoted_monthly_secondary2)
+
+```
+
+### Intial Plots and observations
+
+To understand the general trend of both these stocks in the 20 years time-frame, we make use of the pivoted data to plot Monthly_average of Close, High, Open. We see that Apple stock starts it's rise from 2010 and then gradually climbs up to it's high point, there is quite a bit of volatility in the stock but it has overall trended positive. Microsoft however, until around 2015 has volatility but stays at the same price level but after 2015 it's climb is very fast and steeper than that of Apple's increase in price. By this we can say that, Apple sees a more gradual growth but Microsoft shoots up quite a lot in a much smaller time frame. 
+
+```{r}
+monthly_averages_graph1 <- pivoted_monthly_secondary1 %>% ggplot(aes(x = monthly, y = average_vals, color = monthly_type)) + geom_line() + geom_point(shape = "o") + facet_wrap(~monthly_type) +
+  labs(title = "Apple's Monthly averages of (High, Close and Open)", x = "Date", y = "Monthly type's average (High Close Open)") + theme_minimal()
+monthly_averages_graph1
+
+monthly_averages_graph2 <- pivoted_monthly_secondary2 %>% ggplot(aes(x = monthly, y = average_vals, color = monthly_type)) + geom_line() + geom_point(shape = "x") + facet_wrap(~monthly_type) +
+  labs(title = "Microsoft's Monthly averages of (High, Close and Open)", x = "Date", y = "Monthly type's average (High Close Open)") + theme_minimal()
+monthly_averages_graph2
+```
+
+### MLR model creation
+
+(NOTE: I am enrolled in Stat 462 this semester, where I've learned how to implement MLR in R, so I use that to do further analysis)
+
+In order to gain more understanding of these stocks, we can see if the historic data performance seen is the same as the primary (2023-2024) data performance of the stocks. This can tell us whether Apple's performance is indeed predictable and gradual, unlike that of Microsoft which climbs up in price drastically. To do this, we will be making use of Multiple Linear Regression (Regression because the values are continuous and Multiple because we will make use of Multiple predictors). The two models created are to see, if the open, high and volume (monthly averages) are able to predict what the stock is going to close at. To ensure we are using the best combination of predictors we run OLS and evaluate predictor combinations via AIC, C(p) and R^2 values. What we observe is that AIC and C(p) both which tell us the balance between the fit and the complexity of the model is best with which predictors. We see that when we have all three predictors we have the lowest AIC and C(p) values and we ignore the R^2 because is it the same for all three model combinations so we cannot compare using that. So in both apple and microsoft models, we keep all three predictors to predict monthly_close (30 day close average). 
+
+```{r}
+#I'm not checking for assumptions (normally you would) because I don't want to do too much beyond the scope of this Stat 184's material
+#just building models to explain the performance of each stock
+
+library(lmtest)
+library(olsrr)
+
+apple_model <- lm(monthly_close ~ monthly_high + monthly_open + monthly_volume, data = new_secondary1)
+microsoft_model <- lm(monthly_close ~ monthly_high + monthly_open + monthly_volume, data = new_secondary2)
+
+ols_step_best_subset(apple_model)
+ols_step_best_subset(microsoft_model)
+
+#for both models, based on AIC and C(p) it makes sense to keep all predictors, the R-square value is the same so not using that to compare for all three models (as we add predictors not the original 2 models), 
+#because when we have all three predictors, we have the best fit and complexity due to lowest AIC and C(p) values in both models when we have all three predictors
+#so we can keep the two models as is, no need to drop predictors
+
+summary(apple_model)
+summary(microsoft_model)
+
+
+```
+
+### Analysis Based on MLR models
+
+In order to see how well historic performance alings with current performance, we predict using primary data. Before we do that we have to repeat what we have done to get the secondary1 and secondary2 in monthly averages format. So the same steps have been repeated for primary to make primary_apple_monthly for the apple_model's evaluation and stock analysis, and primary_microsoft_monthly for Microsoft.
+
+We make use of the monthly primary data, to predict and then evaluate the prediction via RMSE (root mean squared error, using METRICS library). We want the RMSE to be as close to 1 as possible, Apple's model has an RMSE of 0.8561341 which is good, because based on the RMSE we can say that apple_model trained via historic apple stock data is able to predict current performance very well. What this means for Apple's performance is that, it's predictable and gradual (as observed in prior plots). But Microsoft's RMSE value for the prediction on current data is 2.875103, which means the model_microsoft is not able to predict, thus does not explain current performance well at all. To understand why, we plot the predicted vs actual close price, when we do this, we see there is an outlier right around 380 (based on plot visual), so we check for any values above 380, and filter it out (in our case the outlier value was 398). Once we do this, we predict again without this outlier case. The reason we remove the outlier is when we initially visually inspect the Microsoft predicted vs actual value's fit, we see that most of the data is explained by the model's fit line, but there is one data point that is away from the line, which could mean it's an outlier effecting the RMSE value. The RMSE value after removing the outlier drops down to 1.503424, which is great but we still want this RMSE to be as close to 1 as possible. This means that, Microsoft has outlier or random unexpected performance which could be due to various reasons but the point is that, Microsoft's performance is unpredictable, it's growth is rapid and unexplained by price data. Further comments on this in conclusion. 
+
+```{r}
+str(primary)
+
+primary_appleOnly <- primary %>% filter(Symbol == "AAPL") %>% select(Date, Open, High, Low, Close, Volume)
+primary_microsoftOnly <- primary %>% filter(Symbol == "MSFT") %>% select(Date, Open, High, Low, Close, Volume)
+
+head(primary_appleOnly)
+head(primary_microsoftOnly)
+
+str(primary_appleOnly)
+str(primary_microsoftOnly)
+
+primary_appleOnly$Date <- ymd(primary_appleOnly$Date)
+primary_microsoftOnly$Date <- ymd(primary_microsoftOnly$Date)
+
+primary_apple_monthly <- userDefinedFunction_calc30DayAvg(primary_appleOnly)
+primary_microsoft_monthly <- userDefinedFunction_calc30DayAvg(primary_microsoftOnly)
+
+predictApple <- predict(apple_model, newdata = primary_apple_monthly)
+predictMicrosoft <- predict(microsoft_model, newdata = primary_microsoft_monthly)
+
+library(Metrics)
+
+rmse_apple <- rmse(actual = primary_apple_monthly$monthly_close, predicted = predictApple)
+rmse_microsoft <-  rmse(actual = primary_microsoft_monthly$monthly_close, predicted = predictMicrosoft)
+rmse_apple
+rmse_microsoft
+
+apple_plot <- primary_apple_monthly %>% ggplot(aes(x = monthly_close, y = predictApple)) +
+  geom_line(aes(x = monthly_close, y = monthly_close), color = "blue") +
+  labs(title = "Apple stock - Actual close vs Predicted close (monthly close)", x = "Actual", y = "Predicted") + 
+  geom_point() + theme_minimal()
+
+microsoft_plot <- primary_microsoft_monthly %>% ggplot(aes(x = monthly_close, y = predictMicrosoft)) +
+  geom_line(aes(x = monthly_close, y = monthly_close), color = "blue") +
+  labs(title = "Microsft stock - Actual close vs Predicted close (monthly close)", x = "Actual", y = "Predicted") + 
+  geom_point() + theme_minimal()
+
+apple_plot
+microsoft_plot
+
+microsoft_outlier_plot <- primary_microsoft_monthly %>% ggplot(aes(y = monthly_close)) + geom_boxplot() +
+  labs(title = "Plot check to see if microsoft has outlier in monthly close") + theme_minimal()
+microsoft_outlier_plot
+
+primary_microsoft_monthly_outliers <- primary_microsoft_monthly %>% filter(monthly_close > 380)
+primary_microsoft_monthly_outliers
+
+primary_microsoft_nooutlier_monthly <- primary_microsoft_monthly %>% filter(monthly_close < 397)
+primary_microsoft_nooutlier_monthly
+predictMicrosoft_new <- predict(microsoft_model, newdata = primary_microsoft_nooutlier_monthly)
+microsoft_new_rmse <- rmse(actual = primary_microsoft_nooutlier_monthly$monthly_close, predicted = predictMicrosoft_new)
+microsoft_new_rmse
+```
+
+
+### Conclusion
+
+Based on all the analysis and observations, we learn that Apple's performance is gradual and explainable, Microsoft's is not, as seen by how one outlier effects the model so drastically. This could mean that Microsoft has many outliers affecting the normal performance we would see, thus unpredictable movements/performance are seen which can go both ways up or down very fast. By that we can say even though Apple might not have higher mean or max price values, but it is a much safer and strong investment, Microsoft however might not be as safe. Depending on the type of investment strategy (long term vs short term), we can decide which is the better stock. For someone looking for a long-term investment Apple is the better choice. There is no one clear winner here without understanding what strategy we want to use, they both perform well. Generally speaking as most people care to invest long term and want to see gradual growth without random movement in stock price, Apple can be deemed the winner of the two stocks. Microsoft's growth is too fast compared to Apple with too many outliers for it to be the better stock even if we see short duration peak climbs. In conclusion Apple's "performance" is better than that of Microsoft. 
+
+
